@@ -86,6 +86,57 @@
     background: rgba(0, 0, 0, 0.1);
 }
 
+.nostr {
+    z-index: 1;
+    position: absolute;
+    right: 0;
+    bottom: 25px;
+    color: #fff;
+    font-size: 10px;
+    display: flex;
+    align-items: center;
+    padding: 5px;
+    margin: 5px;
+    width: auto;
+    height: 25px;
+    border-radius: 5px;
+    background: rgba(0, 0, 0, 0.1);
+}
+
+.nostr-image-button {
+    background-image: url('../images/nostrg.png');
+    z-index: 1;
+    position: absolute;
+    right: 10px;
+    bottom: 65px;
+    display: flex;
+    align-items: center;
+    padding: 5px;
+    margin: 5px;
+    width: 40px; /* Set your image width */
+    height: 40px; /* Set your image height */
+    border-radius: 5px; /* Remove button border */
+    background-size: cover; /* Ensure the image covers the button */
+    cursor: pointer; /* Add pointer cursor on hover */
+}
+
+.zap-image-button {
+    background-image: url('../images/lngradient.png');
+    z-index: 1;
+    position: absolute;
+    right: 10px;
+    bottom: 25px;
+    display: flex;
+    align-items: center;
+    padding: 5px;
+    margin: 5px;
+    width: 40px; /* Set your image width */
+    height: 40px; /* Set your image height */
+    border-radius: 5px; /* Remove button border */
+    background-size: cover; /* Ensure the image covers the button */
+    cursor: pointer; /* Add pointer cursor on hover */
+}
+
 .username {
     z-index: 1;
     position: absolute;

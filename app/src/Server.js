@@ -154,8 +154,8 @@ if (sentryEnabled) {
 // Stats
 const defaultStats = {
     enabled: true,
-    src: 'https://stats.mirotalk.com/script.js',
-    id: '41d26670-f275-45bb-af82-3ce91fe57756',
+    src: 'https://analytics.eu.umami.is/script.js',
+    id: '',
 };
 
 // OpenAI/ChatGPT
@@ -200,6 +200,10 @@ const views = {
     permission: path.join(__dirname, '../../', 'public/views/permission.html'),
     privacy: path.join(__dirname, '../../', 'public/views/privacy.html'),
     room: path.join(__dirname, '../../', 'public/views/Room.html'),
+    support: path.join(__dirname, '../../', 'public/views/support.html'),
+    donate: path.join(__dirname, '../../', 'public/views/support.html'), // legacy so keep this line
+    faq: path.join(__dirname, '../../', 'public/views/faq.html'),
+    presskit: path.join(__dirname, '../../', 'public/views/presskit.html'),
 };
 
 const authHost = new Host(); // Authenticated IP by Login
@@ -534,9 +538,29 @@ function startServer() {
         res.sendFile(views.privacy);
     });
 
-    // mirotalk about
+    // hivetalk about
     app.get(['/about'], (req, res) => {
         res.sendFile(views.about);
+    });
+
+    // hivetalk support
+    app.get(['/support'], (req, res) => {
+        res.sendFile(views.support);
+    });
+
+    // hivetalk donate
+    app.get(['/donate'], (req, res) => {
+        res.sendFile(views.support);
+    });
+
+    // hivetalk donate
+    app.get(['/faq'], (req, res) => {
+        res.sendFile(views.faq);
+    });
+
+    // hivetalk donate
+    app.get(['/presskit'], (req, res) => {
+        res.sendFile(views.presskit);
     });
 
     // Get stats endpoint
@@ -651,6 +675,32 @@ function startServer() {
     // REST API
     // ####################################################
 
+    // get basic room info with room name and number of peers
+    app.get([restApi.basePath + '/meetinfo'], (req, res) => {
+        // Check if endpoint allowed
+        if (restApi.allowed && !restApi.allowed.meetings) {
+            return res.status(403).json({
+                error: 'This endpoint has been disabled. Please contact the administrator for further information.',
+            });
+        }
+        // check if user was authorized for the api call
+        const { host, authorization } = req.headers;
+        const api = new ServerApi(host, authorization);
+        // Get meetings
+        const meetings = api.getMeetings(roomList);
+        meetings.forEach((room) => {
+            // Replace the "peers" array with its length
+            room.peers = room.peers.length;
+        });
+        res.json({ meetings: meetings });
+        // log.debug the output if all done
+        log.debug('HiveTalk get meetings - Authorized', {
+            header: req.headers,
+            body: req.body,
+            meetings: meetings,
+        });
+    });
+
     // request meetings list
     app.get([restApi.basePath + '/meetings'], (req, res) => {
         // Check if endpoint allowed
@@ -663,7 +713,7 @@ function startServer() {
         const { host, authorization } = req.headers;
         const api = new ServerApi(host, authorization);
         if (!api.isAuthorized()) {
-            log.debug('MiroTalk get meetings - Unauthorized', {
+            log.debug('HiveTalk get meetings - Unauthorized', {
                 header: req.headers,
                 body: req.body,
             });
@@ -673,7 +723,7 @@ function startServer() {
         const meetings = api.getMeetings(roomList);
         res.json({ meetings: meetings });
         // log.debug the output if all done
-        log.debug('MiroTalk get meetings - Authorized', {
+        log.debug('HiveTalk get meetings - Authorized', {
             header: req.headers,
             body: req.body,
             meetings: meetings,
@@ -692,17 +742,20 @@ function startServer() {
         const { host, authorization } = req.headers;
         const api = new ServerApi(host, authorization);
         if (!api.isAuthorized()) {
-            log.debug('MiroTalk get meeting - Unauthorized', {
+            log.debug('HiveTalk get meeting - Unauthorized', {
                 header: req.headers,
                 body: req.body,
             });
             return res.status(403).json({ error: 'Unauthorized!' });
         }
         // setup meeting URL
-        const meetingURL = api.getMeetingURL();
+        let name = null;
+        if (req.body.name) name = req.body.name;
+
+        const meetingURL = api.getMeetingURL(name);
         res.json({ meeting: meetingURL });
         // log.debug the output if all done
-        log.debug('MiroTalk get meeting - Authorized', {
+        log.debug('HiveTalk get meeting - Authorized', {
             header: req.headers,
             body: req.body,
             meeting: meetingURL,
@@ -721,7 +774,7 @@ function startServer() {
         const { host, authorization } = req.headers;
         const api = new ServerApi(host, authorization);
         if (!api.isAuthorized()) {
-            log.debug('MiroTalk get join - Unauthorized', {
+            log.debug('HiveTalk get join - Unauthorized', {
                 header: req.headers,
                 body: req.body,
             });
@@ -731,7 +784,7 @@ function startServer() {
         const joinURL = api.getJoinURL(req.body);
         res.json({ join: joinURL });
         // log.debug the output if all done
-        log.debug('MiroTalk get join - Authorized', {
+        log.debug('HiveTalk get join - Authorized', {
             header: req.headers,
             body: req.body,
             join: joinURL,
@@ -750,7 +803,7 @@ function startServer() {
         const { host, authorization } = req.headers;
         const api = new ServerApi(host, authorization);
         if (!api.isAuthorized()) {
-            log.debug('MiroTalk get token - Unauthorized', {
+            log.debug('HiveTalk get token - Unauthorized', {
                 header: req.headers,
                 body: req.body,
             });
@@ -760,7 +813,7 @@ function startServer() {
         const token = api.getToken(req.body);
         res.json({ token: token });
         // log.debug the output if all done
-        log.debug('MiroTalk get token - Authorized', {
+        log.debug('HiveTalk get token - Authorized', {
             header: req.headers,
             body: req.body,
             token: token,
@@ -867,15 +920,21 @@ function startServer() {
     httpsServer.listen(config.server.listen.port, () => {
         log.log(
             `%c
-    
-        ███████╗██╗ ██████╗ ███╗   ██╗      ███████╗███████╗██████╗ ██╗   ██╗███████╗██████╗ 
-        ██╔════╝██║██╔════╝ ████╗  ██║      ██╔════╝██╔════╝██╔══██╗██║   ██║██╔════╝██╔══██╗
-        ███████╗██║██║  ███╗██╔██╗ ██║█████╗███████╗█████╗  ██████╔╝██║   ██║█████╗  ██████╔╝
-        ╚════██║██║██║   ██║██║╚██╗██║╚════╝╚════██║██╔══╝  ██╔══██╗╚██╗ ██╔╝██╔══╝  ██╔══██╗
-        ███████║██║╚██████╔╝██║ ╚████║      ███████║███████╗██║  ██║ ╚████╔╝ ███████╗██║  ██║
-        ╚══════╝╚═╝ ╚═════╝ ╚═╝  ╚═══╝      ╚══════╝╚══════╝╚═╝  ╚═╝  ╚═══╝  ╚══════╝╚═╝  ╚═╝ started...
-    
-        `,
+     ^^      .-=-=-=-.  ^^
+ ^^        ('-=-=-=-=-')         ^^
+         ('-=-=-=-=-=-=-')  ^^         ^^
+   ^^   ('-=-=-=-=-=-=-=-')   ^^                            ^^
+       ( '-=-=-=-(@)-=-=-' )      ^^
+       ('-=-=-=-=-=-=-=-=-')  ^^
+       ('-=-=-=-=-=-=-=-=-')              ^^
+       ('-=-=-=-=-=-=-=-=-')                      ^^
+       ('-=-=-=-=-=-=-=-=-')  ^^
+        ('-=-=-=-=-=-=-=-')          ^^
+         ('-=-=-=-=-=-=-')  ^^                 ^^
+           ('-=-=-=-=-')
+            '-=-=-=-=-'
+            
+  -=[HIVETALK server started ....]=-`,
             'font-family:monospace',
         );
 
@@ -1010,7 +1069,8 @@ function startServer() {
 
             const data = checkXSS(dataObject);
 
-            log.info('User joined', data);
+            // Don't log any user data
+            //log.info('User joined', data);
 
             const room = roomList.get(socket.room_id);
 
