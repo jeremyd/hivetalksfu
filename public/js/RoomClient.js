@@ -26,6 +26,8 @@ const html = {
     videoOn: 'fas fa-video',
     videoOff: 'fas fa-video-slash',
     userName: 'username',
+    nostrIcon: 'nostr-image-button',
+    zapIcon: 'zap-image-button',
     userHand: 'fas fa-hand-paper pulsate',
     pip: 'fas fa-images',
     fullScreen: 'fas fa-expand',
@@ -72,8 +74,10 @@ const icons = {
 };
 
 const image = {
-    about: '../images/mirotalk-logo.gif',
-    avatar: '../images/mirotalksfu-logo.png',
+    //about: '../images/hivelogo50x200.svg',
+    // avatar: '../images/mirotalksfu-logo.png',
+    about: '',
+    avatar: '',
     audio: '../images/audio.gif',
     poster: '../images/loader.gif',
     rec: '../images/rec.png',
@@ -175,6 +179,103 @@ const VideoAI = {
 
 // Recording
 let recordedBlobs = [];
+
+// HANDLE LIGHTNING
+
+function handleLightning(zp) {
+    zp.addEventListener('click', function () {
+        let id = this.id;
+        let extractedIdentifier = id.split('__')[0];
+        Swal.fire({
+            background: swalBackground,
+            title: `Zap ${extractedIdentifier}`,
+            html: `
+                <label for="amount" style="font-size: 1.2em;">Amount (sats): </label>
+                <input type="number" id="amount" class="swal2-input" placeholder="Enter amount" value="21">
+                <button id="preset-21" class="swal2-confirm swal2-styled" style="margin-right: 10px;">21</button>
+                <button id="preset-100" class="swal2-confirm swal2-styled" style="margin-right: 10px;">100</button>
+                <button id="preset-500" class="swal2-confirm swal2-styled" style="margin-right: 10px;">500</button>
+                <button id="preset-1000" class="swal2-confirm swal2-styled">1000</button>
+            `,
+            showCancelButton: true,
+            reverseButtons: true,
+            confirmButtonText: 'OK',
+            confirmButtonColor: 'green',
+            cancelButtonColor: 'red',
+            preConfirm: () => {
+                const amount = document.getElementById('amount').value;
+                // adjust amount to ln address specified range
+                if (!amount || amount <= 0) {
+                    Swal.showValidationMessage('Please enter a valid amount');
+                    return false;
+                }
+                return amount;
+            },
+        }).then((result) => {
+            if (result.isConfirmed) {
+                let amt = result.value;
+                console.log('Amount:', amt);
+                console.log('lightning address:', extractedIdentifier);
+
+                window.moduleFunctions
+                    .handleDonation(peer_name, extractedIdentifier, amt)
+                    .then((result) => {
+                        console.log('handleDonationResult:', result);
+                        // send zap msg to chat emoji pop up
+                        boltEmoji(extractedIdentifier + ' ' + amt + ' sats');
+                        // send zap message to chatroom if open
+                        rc.broadcastMessage(result);
+                    })
+                    .catch((error) => {
+                        console.log('Error:', error);
+                    });
+            }
+        });
+        document.getElementById('preset-21').addEventListener('click', function () {
+            document.getElementById('amount').value = 21;
+        });
+        document.getElementById('preset-100').addEventListener('click', function () {
+            document.getElementById('amount').value = 100;
+        });
+        document.getElementById('preset-500').addEventListener('click', function () {
+            document.getElementById('amount').value = 500;
+        });
+        document.getElementById('preset-1000').addEventListener('click', function () {
+            document.getElementById('amount').value = 1000;
+        });
+    });
+}
+
+// ####################################################
+// HANDLE NOSTR
+// ####################################################
+
+// Define the getProfile for Nostr - temporarily get it from njump.me
+function getProfile(eventParam) {
+    var host = 'https://njump.me';
+
+    var width = '100%'; // Set default width
+    var height = '100%'; // Set default height
+    var iframe = document.createElement('iframe');
+    iframe.src = host + '/' + eventParam + '?embed=yes';
+    //iframe.src = host + '/' + eventParam;
+    iframe.style.width = width;
+    iframe.style.height = 800 + 'px';
+    iframe.style.border = 'none'; // Remove the border
+
+    // Add a class to easily permit overwriting the styles
+    iframe.classList.add('nostr-embedded');
+
+    // Listen for messages from the iframe
+    window.addEventListener('message', function (event) {
+        console.log('Message received:', event.data);
+        iframe.onload = function () {
+            // This code will execute when the iframe content has loaded
+            iframe.contentWindow.postMessage({ setDarkMode: true }, '*');
+        };
+    });
+    return iframe;
+}
 
 class RoomClient {
     constructor(
@@ -611,6 +712,7 @@ class RoomClient {
 
         // notify && participantsCount == 1 ? shareRoom() : sound('joined');
         if (notify && participantsCount == 1) {
+            console.log('share room pop dialog on initial join');
             shareRoom();
         } else {
             if (this.isScreenAllowed) {
@@ -1946,6 +2048,17 @@ class RoomClient {
                 d.appendChild(elem);
                 d.appendChild(pm);
                 d.appendChild(i);
+
+                // add lightning address or lnurl for zaps
+                if (peer_lnaddress) {
+                    let zp = document.createElement('button');
+                    console.log('peer lnaddress: ', peer_lnaddress);
+                    zp.id = peer_lnaddress + '__zap';
+                    zp.className = html.zapIcon;
+                    handleLightning(zp);
+                    d.appendChild(zp);
+                }
+
                 d.appendChild(p);
                 d.appendChild(vb);
                 this.videoMediaContainer.appendChild(d);
@@ -2269,6 +2382,7 @@ class RoomClient {
         const remotePeerAudio = peer_info.peer_audio;
         const remotePrivacyOn = peer_info.peer_video_privacy;
         const remotePeerPresenter = peer_info.peer_presenter;
+        const remoteLNAddress = peer_info.peer_lnaddress;
 
         switch (type) {
             case mediaType.video:
@@ -2349,7 +2463,7 @@ class RoomClient {
                 p = document.createElement('p');
                 p.id = remotePeerId + '__name';
                 p.className = html.userName;
-                p.innerText = (remotePeerPresenter ? '⭐️ ' : '') + peer_name;
+                p.innerText = (remotePeerPresenter ? '⭐️ ' : ' ') + peer_name;
                 pm = document.createElement('div');
                 pb = document.createElement('div');
                 pm.setAttribute('id', remotePeerId + '__pitchMeter');
@@ -2380,6 +2494,17 @@ class RoomClient {
                 if (!this.isMobileDevice) vb.appendChild(pn);
                 d.appendChild(elem);
                 d.appendChild(i);
+
+                // add remote lightning address or lnurl for zaps
+                if (remoteLNAddress) {
+                    let zp = document.createElement('button');
+                    console.log('remote lnaddress: ', remoteLNAddress);
+                    zp.id = remoteLNAddress + '__zap';
+                    zp.className = html.zapIcon;
+                    handleLightning(zp);
+                    d.appendChild(zp);
+                }
+
                 d.appendChild(p);
                 d.appendChild(pm);
                 d.appendChild(vb);
@@ -2527,7 +2652,7 @@ class RoomClient {
         //console.log('setVideoOff', peer_info);
         let d, vb, i, h, au, sf, sm, sv, gl, ban, ko, p, pm, pb, pv;
 
-        const { peer_id, peer_name, peer_audio, peer_presenter } = peer_info;
+        const { peer_id, peer_name, peer_audio, peer_presenter, peer_npub, peer_lnaddress } = peer_info;
 
         this.removeVideoOff(peer_id);
         d = document.createElement('div');
@@ -2565,9 +2690,12 @@ class RoomClient {
             ko.id = 'remotePeer___' + peer_id + '___kickOut';
             ko.className = html.kickOut;
         }
+        // add nostr profile image here if present
         i = document.createElement('img');
         i.className = 'videoAvatarImage center'; // pulsate
         i.id = peer_id + '__img';
+
+        // set peer and present names
         p = document.createElement('p');
         p.id = peer_id + '__name';
         p.className = html.userName;
@@ -2594,6 +2722,56 @@ class RoomClient {
         }
         vb.appendChild(au);
         d.appendChild(i);
+
+        // add lightning address or lnurl for zaps
+        if (peer_lnaddress) {
+            let zp = document.createElement('button');
+            console.log('peer lnaddress: ', peer_lnaddress);
+            zp.id = peer_lnaddress + '__zap';
+            zp.className = html.zapIcon;
+            handleLightning(zp);
+            d.appendChild(zp);
+        }
+
+        // add nostr icon - temporary disabled until we find a better place for it
+        // let nl = document.createElement('button');
+        // console.log("Peer Npub is:  ", peer_npub);
+        // if (peer_npub) { // only do this if there is a peer_npub
+        //     nl.id = peer_npub + '__nostr';
+        //     nl.className = html.nostrIcon;
+        //     d.appendChild(nl);
+        //     // Add an event listener to the button to trigger SweetAlert2 on click
+        //     nl.addEventListener('click', function() {
+        //         let id = this.id;
+        //         let extractedIdentifier = id.split('__')[0];
+        //         var iframe = getProfile(extractedIdentifier);
+        //        (async ()=>  {
+        //         await Swal.fire({
+        //             background: swalBackground,
+        //             html: iframe.outerHTML,
+        //             position: 'top-end',
+        //             showClass: {
+        //               popup: `
+        //               animate__animated
+        //               animate__fadeInRight
+        //               animate__faster
+        //             `,
+        //             },
+        //             hideClass: {
+        //               popup: `
+        //               animate__animated
+        //               animate__fadeOutRight
+        //               animate__faster
+        //             `,
+        //             },
+        //             grow: 'column',
+        //             width: 600,
+        //             showCloseButton: true,
+        //             showConfirmButton: false,
+        //         });
+        //     })();
+        //     });
+        // }
         d.appendChild(p);
         d.appendChild(h);
         d.appendChild(pm);
@@ -2611,7 +2789,7 @@ class RoomClient {
         }
         this.handleDD(d.id, peer_id, !remotePeer);
         this.popupPeerInfo(p.id, peer_info);
-        this.setVideoAvatarImgName(i.id, peer_name);
+        this.setVideoAvatarImgName(i.id, peer_name, peer_info.peer_url);
         this.getId(i.id).style.display = 'block';
         handleAspectRatio();
         if (isParticipantsListOpen) getRoomParticipants();
@@ -2825,12 +3003,26 @@ class RoomClient {
         }
     }
 
-    setVideoAvatarImgName(elemId, peer_name) {
+    setVideoAvatarImgName(elemId, peer_name, peer_url) {
         let elem = this.getId(elemId);
         if (cfg.useAvatarSvg) {
-            rc.isValidEmail(peer_name)
-                ? elem.setAttribute('src', this.genGravatar(peer_name))
-                : elem.setAttribute('src', this.genAvatarSvg(peer_name, 250));
+            console.log('setVideoAvatarImgName: ', peer_name, 'url: ', peer_url);
+            let avatarImg = '';
+            if (peer_url) {
+                elem.setAttribute('src', peer_url); // this.getNostrAvatar(peer_name))
+            } else {
+                isValidLightningAddress(peer_name).then((isValid) => {
+                    if (isValid) {
+                        avatarImg = elem.setAttribute('src', boltavatar);
+                        console.log('valid lightning address', avatarImg);
+                    } else {
+                        avatarImg = rc.isValidEmail(peer_name)
+                            ? elem.setAttribute('src', this.genGravatar(peer_name))
+                            : elem.setAttribute('src', this.genAvatarSvg(peer_name, 250));
+                        console.log('avatar img', avatarImg);
+                    }
+                });
+            }
         } else {
             elem.setAttribute('src', image.avatar);
         }
@@ -2839,6 +3031,7 @@ class RoomClient {
     genGravatar(email, size = false) {
         const hash = md5(email.toLowerCase().trim());
         const gravatarURL = `https://www.gravatar.com/avatar/${hash}` + (size ? `?s=${size}` : '?s=250') + '?d=404';
+        console.log('inside genGravatar: gravatarURL', gravatarURL);
         return gravatarURL;
         function md5(input) {
             return CryptoJS.MD5(input).toString();
@@ -3693,6 +3886,7 @@ class RoomClient {
     async toggleChat() {
         const chatRoom = this.getId('chatRoom');
         chatRoom.classList.toggle('show');
+
         if (!this.isChatOpen) {
             await getRoomParticipants();
             hide(chatMinButton);
@@ -3703,9 +3897,19 @@ class RoomClient {
             this.sound('open');
             this.showPeerAboutAndMessages('all', 'all');
         }
+        // console.log("toggleChat: isPinned", this.isChatPinned, " isChatOpen ", this.isChatOpen)
         isParticipantsListOpen = !isParticipantsListOpen;
         this.isChatOpen = !this.isChatOpen;
-        if (this.isChatPinned) this.chatUnpin();
+        if (this.isMobileDevice) {
+            document.body.style.overflow = this.isChatOpen ? 'hidden' : '';
+        } else {
+            if (this.isChatPinned) {
+                this.chatUnpin();
+            } else {
+                this.chatPin();
+            }
+        }
+
         resizeChatRoom();
     }
 
@@ -3751,6 +3955,7 @@ class RoomClient {
         document.documentElement.style.setProperty('--msger-width', '100%');
         document.documentElement.style.setProperty('--msger-height', '100%');
         this.toggleChatHistorySize(true);
+        // console.log(" chatMaximize ", this.isChatMaximized)
     }
 
     chatMinimize() {
@@ -3765,9 +3970,12 @@ class RoomClient {
             document.documentElement.style.setProperty('--msger-height', '700px');
             this.toggleChatHistorySize(false);
         }
+        // console.log(" chatMinimize ", this.isChatMaximized)
     }
 
     chatPin() {
+        // console.log("chatPin Method: ", this.isChatPinned)
+
         if (!this.isVideoPinned) {
             this.videoMediaContainerPin();
         }
@@ -3782,6 +3990,7 @@ class RoomClient {
     }
 
     chatUnpin() {
+        // console.log("chat unpin method: ", this.isChatPinned)
         if (!this.isVideoPinned) {
             this.videoMediaContainerUnpin();
         }
@@ -3845,12 +4054,47 @@ class RoomClient {
             });
     }
 
-    sendMessage() {
-        if (!this.thereAreParticipants() && !isChatGPTOn) {
-            this.cleanMessage();
-            isChatPasteTxt = false;
-            return this.userLog('info', 'No participants in the room', 'top-end');
+    broadcastMessage(msg) {
+        // chatMessage.value = "broadcast this message"
+        const peer_msg = this.formatMsg(this.peer_name + ' ' + msg);
+
+        const data = {
+            room_id: this.room_id,
+            peer_name: this.peer_name,
+            peer_id: this.peer_id,
+            peer_msg: peer_msg,
+        };
+        const participantsList = this.getId('participantsList');
+        const participantsListItems = participantsList.getElementsByTagName('li');
+        for (let i = 0; i < participantsListItems.length; i++) {
+            const li = participantsListItems[i];
+            if (li.classList.contains('active')) {
+                data.to_peer_id = li.getAttribute('data-to-id');
+                data.to_peer_name = li.getAttribute('data-to-name');
+                console.log('Send message:', data);
+                this.socket.emit('message', data);
+                this.setMsgAvatar('left', this.peer_name);
+                this.appendMessage(
+                    'left',
+                    this.leftMsgAvatar,
+                    this.peer_name,
+                    this.peer_id,
+                    peer_msg,
+                    data.to_peer_id,
+                    data.to_peer_name,
+                );
+                this.cleanMessage();
+            }
         }
+    }
+
+    sendMessage() {
+        // comment out for testing,  allow send if no participants
+        // if (!this.thereAreParticipants() && !isChatGPTOn) {
+        //     this.cleanMessage();
+        //     isChatPasteTxt = false;
+        //     return this.userLog('info', 'No participants in the room', 'top-end');
+        // }
 
         // Prevent long messages
         if (this.chatMessageLengthCheck && chatMessage.value.length > this.chatMessageLength) {
@@ -3930,7 +4174,7 @@ class RoomClient {
                     const { message, context } = completion;
                     this.chatGPTContext = context ? context : [];
                     console.log('Receive message:', message);
-                    this.setMsgAvatar('right', 'ChatGPT');
+                    this.setMsgAvatar('right', 'ChatGPT'); // assume no avatar?
                     this.appendMessage('right', image.chatgpt, 'ChatGPT', this.peer_id, message, 'ChatGPT', 'ChatGPT');
                     this.cleanMessage();
                     this.streamingTask(message); // Video AI avatar speak
@@ -3942,6 +4186,8 @@ class RoomClient {
                     console.log('ChatGPT error:', err);
                 });
         } else {
+            // send message to group chat room
+            console.log('send msg to group room');
             const participantsList = this.getId('participantsList');
             const participantsListItems = participantsList.getElementsByTagName('li');
             for (let i = 0; i < participantsListItems.length; i++) {
@@ -4056,6 +4302,13 @@ class RoomClient {
 
     setMsgAvatar(avatar, peerName) {
         let avatarImg = rc.isValidEmail(peerName) ? this.genGravatar(peerName) : this.genAvatarSvg(peerName, 32);
+        // this line below doesn't work
+        //  avatarImg = peer_url ? peer_url : this.genAvatarSvg(peerName, 32);
+        // isValidLightningAddress(peerName).then(isValid => {
+        //     if (isValid) {
+        //         avatarImg = boltavatar;
+        //     }
+        // });
         avatar === 'left' ? (this.leftMsgAvatar = avatarImg) : (this.rightMsgAvatar = avatarImg);
     }
 
@@ -5896,8 +6149,6 @@ class RoomClient {
                     return userLog('warning', 'Something wrong, try with another Video or audio URL');
                 }
                 /*
-                    https://www.youtube.com/watch?v=RT6_Id5-7-s
-                    https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4
                     https://www.learningcontainer.com/wp-content/uploads/2020/02/Kalimba.mp3
                 */
                 let is_youtube = this.getVideoType(result.value) == 'na' ? true : false;
@@ -6317,9 +6568,30 @@ class RoomClient {
                     let lobbyTr = '';
                     let peer_id = data.peer_id;
                     let peer_name = data.peer_name;
-                    let avatarImg = rc.isValidEmail(peer_name)
-                        ? this.genGravatar(peer_name)
-                        : this.genAvatarSvg(peer_name, 32);
+                    // pass data.peer_info.peer_url to get avatar
+                    let peer_url = '';
+                    let avatarImg = '';
+                    try {
+                        peer_url = data.peer_info.peer_url;
+                        avatarImg = peer_url;
+
+                        if (!avatarImg) {
+                            console.log(' in RoomLobby --> avatarImg: ', avatarImg);
+                            isValidLightningAddress(peer_name).then((isValid) => {
+                                if (isValid) {
+                                    avatarImg = boltavatar;
+                                } else {
+                                    avatarImg = rc.isValidEmail(peer_name)
+                                        ? this.genGravatar(peer_name)
+                                        : this.genAvatarSvg(peer_name, 32);
+                                }
+                            });
+                        }
+                    } catch (error) {
+                        console.log("No peer_url, that's ok", error);
+                    }
+                    console.log(' in RoomLobby --> avatarImg: ', avatarImg);
+
                     let lobbyTb = this.getId('lobbyTb');
                     let lobbyAccept = _PEER.acceptPeer;
                     let lobbyReject = _PEER.ejectPeer;
@@ -6875,6 +7147,9 @@ class RoomClient {
             case 'roomEmoji':
                 this.handleRoomEmoji(cmd);
                 break;
+            case 'zapEmoji':
+                this.handleZapEmoji(cmd);
+                break;
             case 'transcript':
                 this.transcription.handleTranscript(cmd);
                 break;
@@ -6894,6 +7169,24 @@ class RoomClient {
             default:
                 break;
             //...
+        }
+    }
+
+    handleZapEmoji(cmd, duration = 5000) {
+        const userEmoji = document.getElementById(`userEmoji`);
+        if (userEmoji) {
+            const emojiDisplay = document.createElement('div');
+            emojiDisplay.className = 'animate__animated animate__backInUp';
+            emojiDisplay.style.padding = '10px';
+            emojiDisplay.style.fontSize = '3vh';
+            emojiDisplay.style.color = '#FFF';
+            emojiDisplay.style.backgroundColor = 'rgba(0, 0, 0, 0.2)';
+            emojiDisplay.style.borderRadius = '10px';
+            emojiDisplay.innerText = `${cmd.peer_name} zapped ${cmd.emoji}!`;
+            userEmoji.appendChild(emojiDisplay);
+            setTimeout(() => {
+                emojiDisplay.remove();
+            }, duration);
         }
     }
 
